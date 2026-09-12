@@ -1,5 +1,6 @@
 // const { exec } = require('node:child_process')
 const net = require('node:net')
+const https = require('node:https')
 const _ = require('lodash')
 const log = require('../../utils/util.log.server')
 const config = require('./config.js')
@@ -319,24 +320,73 @@ class SpeedTester {
   //   })
   // }
 
-  testOne (item) {
+  // 通过真实TLS握手 + HTTP请求测速（SNI使用真实域名，与实际请求一致）
+  // 作用：识别"TCP能通但TLS被阻断/限速"的假存活IP，这类IP用纯TCP测速会误判为可用
+  testByTLSHTTP (item) {
     return new Promise((resolve, reject) => {
-      const thenFun = (ret) => {
-        resolve(ret)
+      const { host, dns } = item
+      const startTime = Date.now()
+
+      let isOver = false
+      const timeout = 8000
+      let timeoutId = null
+
+      const fail = (e) => {
+        if (isOver) return
+        isOver = true
+        clearTimeout(timeoutId)
+        if (!e.message.includes('timeout')) {
+          log.warn('[speed] test by TLS error:  ', this.hostname, `➜ ${host}:${this.port} from DNS '${dns}', cost: ${Date.now() - startTime} ms, errorMsg:`, e.message)
+        } else {
+          log.warn('[speed] test by TLS timeout:', this.hostname, `➜ ${host}:${this.port} from DNS '${dns}', cost: ${Date.now() - startTime} ms`)
+        }
+        req.destroy()
+        reject(e)
       }
 
-      // 先用TCP测速
-      this.testByTCP(item)
-        .then(thenFun)
-        .catch((e) => {
-          // // TCP测速失败，再用 PING 测速
-          // this.testByPing(item)
-          //   .then(thenFun)
-          //   .catch((e2) => {
-          //     reject(new Error(`TCP测速失败：${e.message}；PING测速失败：${e2.message}；`))
-          //   })
+      const req = https.request({
+        host,
+        port: this.port,
+        servername: this.hostname, // 关键：SNI用真实域名，模拟客户端真实握手
+        path: '/robots.txt',
+        method: 'HEAD',
+        family: host.includes(':') ? 6 : 4,
+        rejectUnauthorized: false, // 测速只关心连通性与耗时，不校验证书
+      }, (res) => {
+        if (isOver) {
+          res.destroy()
+          return
+        }
+        isOver = true
+        clearTimeout(timeoutId)
+        const ttfb = Date.now() - startTime
+        resolve({ status: 'success', by: 'TLS', target: `${host}:${this.port}`, time: ttfb, tlsTime: item.tlsTime })
+        req.destroy()
+        res.destroy()
+      })
+      req.on('socket', (socket) => {
+        socket.once('secureConnect', () => {
+          item.tlsTime = Date.now() - startTime
+        })
+      })
+      req.on('error', (e) => fail(e))
+      timeoutId = setTimeout(() => fail(new Error('timeout')), timeout)
+      req.end()
+    })
+  }
 
-          reject(new Error(`TCP测速失败：${item.host}:${this.port} ${e.message}`))
+  testOne (item) {
+    // 非HTTPS端口无法做TLS测速，仍用TCP测速
+    if (Number.parseInt(this.port) !== 443) {
+      return this.testByTCP(item)
+    }
+    return new Promise((resolve, reject) => {
+      // 用TLS+HTTP测速代替纯TCP测速：TLS握手失败或无响应的IP直接判定为不可用，
+      // 避免"TCP测速通过、实际请求全部卡死在TLS阶段"的假存活IP被选中
+      this.testByTLSHTTP(item)
+        .then(resolve)
+        .catch((e) => {
+          reject(new Error(`TLS/HTTP测速失败：${item.host}:${this.port} ${e.message}`))
         })
     })
   }
