@@ -62,7 +62,9 @@ class SpeedTester {
   // 按需探测结果反馈：记录 IP 成败，供后续请求决策
   reportProbeResult (host, success) {
     const item = this.backupList.find(i => i.host === host)
-    if (!item) return
+    if (!item) {
+      return
+    }
     item._probing = false
     if (success) {
       item.status = 'success'
@@ -330,9 +332,12 @@ class SpeedTester {
       let isOver = false
       const timeout = 8000
       let timeoutId = null
+      let req = null
 
       const fail = (e) => {
-        if (isOver) return
+        if (isOver) {
+          return
+        }
         isOver = true
         clearTimeout(timeoutId)
         if (!e.message.includes('timeout')) {
@@ -344,7 +349,7 @@ class SpeedTester {
         reject(e)
       }
 
-      const req = https.request({
+      req = https.request({
         host,
         port: this.port,
         servername: this.hostname, // 关键：SNI用真实域名，模拟客户端真实握手
@@ -369,7 +374,7 @@ class SpeedTester {
           item.tlsTime = Date.now() - startTime
         })
       })
-      req.on('error', (e) => fail(e))
+      req.on('error', e => fail(e))
       timeoutId = setTimeout(() => fail(new Error('timeout')), timeout)
       req.end()
     })
