@@ -1,0 +1,44 @@
+name: "CI Verify"
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4.1.7
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: "Setup pnpm"
+        uses: pnpm/action-setup@v4
+
+      - name: "Setup Node.js 22"
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: "Install dependencies"
+        run: pnpm install --frozen-lockfile
+
+      - name: "Lint speed tester"
+        run: pnpm exec eslint packages/mitmproxy/src/lib/speed/SpeedTester.js
+
+      - name: "Unit tests (mitmproxy)"
+        run: pnpm --filter @docmirror/mitmproxy test
+
+      - name: "Unit tests (core)"
+        run: pnpm --filter @docmirror/dev-sidecar test
