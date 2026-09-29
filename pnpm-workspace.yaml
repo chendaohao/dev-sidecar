@@ -1,0 +1,27 @@
+packages:
+  # all packages in subdirectories of packages/ and components/
+  - packages/*
+  # exclude packages that are inside test directories
+  - '!**/test/**'
+
+shamefullyHoist: true
+
+# 不要恢复 overrides：cross-spawn / form-data 等会与 electron-builder 生产依赖解析冲突
+# （Production dependency not found），见历史 commit「移除 cross-spawn 覆盖以修复 Windows 打包失败」。
+# 安全版本需通过升级直接依赖（如 request）解决，而不是全局 override。
+
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - x64
+    - arm64
+    - ia32
+
+allowBuilds:
+  '@parcel/watcher': true
+  core-js: true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  unrs-resolver: true

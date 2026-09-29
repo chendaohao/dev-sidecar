@@ -1,0 +1,101 @@
+name: "Build CLI (SEA)"
+
+on:
+  push:
+    branches:
+      - release*
+    tags:
+      - 'v*'
+    paths:
+      - "packages/cli/**"
+      - "packages/core/**"
+      - "packages/mitmproxy/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - ".github/workflows/build-cli.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v5
+
+      - name: "Setup pnpm"
+        uses: pnpm/action-setup@v5
+
+      - name: "Setup Node.js 22.x"
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com/
+          cache: pnpm
+
+      - name: "Install dependencies"
+        run: pnpm install
+
+      - name: "Test CLI"
+        run: pnpm --filter @docmirror/dev-sidecar-cli test
+
+      - name: "Cache Node.js binaries (node-bin)"
+        uses: actions/cache@v5
+        with:
+          path: packages/cli/dist/node-bin
+          key: cli-node-bin-${{ runner.os }}-${{ hashFiles('packages/cli/scripts/build.js') }}
+
+      - name: "Build all platforms (SEA)"
+        run: node packages/cli/scripts/build.js --all
+
+      - name: "Generate SHA256SUMS"
+        run: |
+          cd packages/cli/dist
+          sha256sum ds-cli-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: "Print dist"
+        run: |
+          ls -lah packages/cli/dist/ds-cli-*
+          file packages/cli/dist/ds-cli-* 2>/dev/null || true
+
+      - name: "Upload artifacts"
+        uses: actions/upload-artifact@v6
+        with:
+          name: ds-cli-${{ github.sha }}
+          path: |
+            packages/cli/dist/ds-cli-*
+            packages/cli/dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: "Download artifacts"
+        uses: actions/download-artifact@v7
+        with:
+          pattern: ds-cli-*
+          merge-multiple: true
+          path: release
+
+      - name: "Print release dir"
+        run: |
+          chmod +x release/ds-cli-*
+          ls -lah release/
+
+      - name: "Create release"
+        uses: wangliang181230/github-action-ghr@master
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GHR_PATH: release/
+          GHR_TITLE: ${{ github.ref_name }}
+          GHR_REPLACE: true
+          GHR_DRAFT: true

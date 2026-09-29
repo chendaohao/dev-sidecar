@@ -1,0 +1,26 @@
+# IntelliJ project files
+.idea
+*.iml
+
+# vscode settings files
+.vscode
+
+# Mac
+.DS_Store
+
+# Node files
+node_modules/
+*.lock
+package-lock.json
+
+# Other files
+out
+gen
+*.log
+*.lnk
+.venv
+packages/cli/dist/*
+!packages/cli/dist/sea-config.json
+packages/cli/.nyc_output
+.mimocode
+.claude
