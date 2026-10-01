@@ -68,7 +68,8 @@ export default {
     ipcRenderer.on('config.changed', this.onConfigChanged)
 
     ipcRenderer.on('search-bar', (_, message) => {
-      if (window.config.disableSearchBar) {
+      // window.config 在 main.js 中初始化；可选链兜底，避免异常时 SearchBar 永远打不开
+      if (window.config?.disableSearchBar) {
         this.hideSearchBar = true
         return
       }

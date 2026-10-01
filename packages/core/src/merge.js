@@ -12,8 +12,11 @@ function doDiff (oldObj, newObj) {
     return oldObj
   }
 
-  // 临时的对象，用于找出被删除的数据
-  const tempObj = { ...oldObj }
+  // 临时的对象，用于找出被删除的数据。
+  // 必须深拷贝：deleteNullItems 会递归 delete 嵌套对象的 key，
+  // 浅拷贝时嵌套对象仍与调用方的 oldObj 共享引用，会悄悄篡改调用者的数据。
+  // cloneDeep(null/undefined) 返回 null/undefined 而非空对象，需兜底保持原 `{...oldObj}` 的行为
+  const tempObj = lodash.cloneDeep(oldObj) || {}
   // 删除空项，使差异对象更干净一些，体现出用户自定义内容
   deleteNullItems(tempObj)
 

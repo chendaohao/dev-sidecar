@@ -15,7 +15,25 @@ const logToConsole = !logDisabled && process.env.DEV_SIDECAR_LOG_TO_CONSOLE !== 
 
 function createNoopLogger () {
   const noop = () => {}
-  return { debug: noop, info: noop, warn: noop, error: noop, level: 'off', category: 'noop' }
+  // 方法面须与 log4js Logger 对齐（含 trace/fatal 及 is*Enabled 探测方法），
+  // 否则 logDisabled 时调用 log.isDebugEnabled() 这类探测会 TypeError
+  return {
+    trace: noop,
+    debug: noop,
+    info: noop,
+    warn: noop,
+    error: noop,
+    fatal: noop,
+    isLevelEnabled: () => false,
+    isTraceEnabled: () => false,
+    isDebugEnabled: () => false,
+    isInfoEnabled: () => false,
+    isWarnEnabled: () => false,
+    isErrorEnabled: () => false,
+    isFatalEnabled: () => false,
+    level: 'off',
+    category: 'noop',
+  }
 }
 
 const noopLogger = logDisabled ? createNoopLogger() : null

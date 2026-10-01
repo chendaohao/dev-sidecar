@@ -17,6 +17,25 @@ let socketId = 0
 
 let httpsOverHttpAgent, httpOverHttpsAgent, httpsOverHttpsAgent
 
+// tlsVersionMapping 的编译结果缓存：getTimeoutConfig 在每个请求上都会调用，
+// 而 serverSetting 对象在服务生命周期内不变，用 WeakMap 缓存避免每请求重建正则映射
+const EMPTY_HOST_MAP = { origin: {} }
+const tlsVersionMappingCache = new WeakMap()
+
+function getTlsVersionMapping (serverSetting) {
+  const source = serverSetting.tlsVersionMapping
+  if (source == null) {
+    // 与 domainMapRegexply(null) 的返回保持一致：空映射而非 null，避免 matchHostname 每请求 warn
+    return EMPTY_HOST_MAP
+  }
+  let compiled = tlsVersionMappingCache.get(serverSetting)
+  if (compiled === undefined) {
+    compiled = matchUtil.domainMapRegexply(source)
+    tlsVersionMappingCache.set(serverSetting, compiled)
+  }
+  return compiled
+}
+
 function normalizeTlsVersion (tlsVersion) {
   if (tlsVersion === 'TLSv1.2' || tlsVersion === '1.2' || tlsVersion === 'tls1.2') {
     return 'TLSv1.2'
@@ -36,7 +55,7 @@ function getTimeoutConfig (hostname, serverSetting) {
   // 支持两种配置：
   //   1. "TLSv1.2"                              -> 启用
   //   2. { enabled: true/false, version: "..." } -> 可远程下发后由用户自行启用
-  const tlsVersionMapping = matchUtil.domainMapRegexply(serverSetting.tlsVersionMapping)
+  const tlsVersionMapping = getTlsVersionMapping(serverSetting)
   const tlsVersionConf = matchUtil.matchHostname(tlsVersionMapping, hostname, 'get tlsVersion')
   let tlsVersion = ''
   if (typeof tlsVersionConf === 'string') {

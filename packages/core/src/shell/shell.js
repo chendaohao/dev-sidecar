@@ -6,6 +6,11 @@ const log = require('../utils/util.log.core')
 
 fixPath()
 
+// 子进程命令默认超时（毫秒）：git/npm/pip 配置、系统代理设置等命令都应秒级完成，
+// 避免命令挂起（如凭证弹窗、被安全软件拦截）导致启动/关闭流程永久阻塞。
+// 可通过 options.timeout 覆盖单个调用。
+const DEFAULT_EXEC_TIMEOUT = 30000
+
 class SystemShell {
   static async exec (cmds, args) {
     throw new Error('You have to implement the method exec!')
@@ -54,7 +59,8 @@ class WindowsSystemShell extends SystemShell {
       }
 
       try {
-        return await ps.invoke()
+        // node-powershell 不支持超时参数，用 Promise 竞速兜底，防止 invoke 永久挂起
+        return await invokeWithTimeout(ps, DEFAULT_EXEC_TIMEOUT)
       } finally {
         ps.dispose()
       }
@@ -69,9 +75,36 @@ class WindowsSystemShell extends SystemShell {
   }
 }
 
+// 为 node-powershell 的 invoke 增加超时竞速：超时后 reject，由调用方 finally 中 dispose 杀掉子进程
+function invokeWithTimeout (ps, timeout) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) {
+        return
+      }
+      settled = true
+      reject(new Error(`PowerShell 命令执行超时 (${timeout} ms)`))
+    }, timeout)
+    ps.invoke().then((ret) => {
+      if (!settled) {
+        settled = true
+        clearTimeout(timer)
+        resolve(ret)
+      }
+    }, (e) => {
+      if (!settled) {
+        settled = true
+        clearTimeout(timer)
+        reject(e)
+      }
+    })
+  })
+}
+
 function childExecCmdWindows (cmd, options = {}) {
   return new Promise((resolve, reject) => {
-    const execOptions = { ...options, encoding: 'buffer' }
+    const execOptions = { timeout: DEFAULT_EXEC_TIMEOUT, ...options, encoding: 'buffer' }
     delete execOptions.type
     delete execOptions.printErrorLog
 
@@ -117,7 +150,7 @@ function _decodeBuffer (buf) {
 function childExec (composeCmds, options = {}) {
   return new Promise((resolve, reject) => {
     log.info('shell:', composeCmds)
-    childProcess.exec(composeCmds, options, (error, stdout, stderr) => {
+    childProcess.exec(composeCmds, { timeout: DEFAULT_EXEC_TIMEOUT, ...options }, (error, stdout, stderr) => {
       if (error) {
         if (options.printErrorLog !== false) {
           log.error('cmd 命令执行错误：\n===>\ncommands:', composeCmds, '\n   error:', error, '\n<===')
@@ -175,7 +208,7 @@ async function execute (executor, args) {
 async function execFile (file, args, options) {
   return new Promise((resolve, reject) => {
     try {
-      childProcess.execFile(file, args, options, (err, stdout) => {
+      childProcess.execFile(file, args, { timeout: DEFAULT_EXEC_TIMEOUT, ...options }, (err, stdout) => {
         if (err) {
           log.error('文件执行出错：', file, err)
           reject(err)

@@ -1,3 +1,5 @@
+const log = require('./utils/util.log.core')
+
 const listener = {}
 let index = 1
 function register (channel, handle, order = 10) {
@@ -17,7 +19,12 @@ function fire (channel, event) {
     return
   }
   for (const item of handles) {
-    item.handle(event)
+    // 单个处理器异常（如向已销毁窗口 send 事件）不应中断后续处理器，也不应抛回触发方
+    try {
+      item.handle(event)
+    } catch (e) {
+      log.error(`事件处理器执行失败, channel: ${channel}:`, e)
+    }
   }
 }
 

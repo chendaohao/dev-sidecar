@@ -18,6 +18,11 @@ try {
   console.error('监听 window.onerror 出现异常:', e)
 }
 
+// App.vue / setting.vue / server.vue 会直接读写 window.config 上的开关
+// （disableSearchBar / disableBeforeInputEvent），必须先初始化，否则首次读取即抛
+// TypeError: Cannot read properties of undefined
+window.config = window.config || {}
+
 try {
   console.info('main.js start')
   ipcRenderer.send('main.js start')

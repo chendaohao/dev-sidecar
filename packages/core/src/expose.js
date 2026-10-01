@@ -85,9 +85,11 @@ async function startup ({ mitmproxyPath, setting }) {
     })())
   }
 
-  try {
-    for (const key in plugin) {
-      if (conf.plugin[key].enabled && !status.plugin[key]?.enabled) {
+  for (const key in plugin) {
+    // try/catch 必须放在循环体内部：某个插件的配置读取异常（如用户配置里残留了
+    // 已改名的插件 key）不应中断其余插件的启动
+    try {
+      if (conf.plugin[key]?.enabled && !status.plugin[key]?.enabled) {
         if (key === 'overwall' && setting && setting.overwall !== true) {
           log.info(`插件【${key}】未启动：setting.json 未开启 overwall`)
           continue
@@ -101,9 +103,9 @@ async function startup ({ mitmproxyPath, setting }) {
           }
         })())
       }
+    } catch (err) {
+      log.error(`开启插件【${key}】失败：`, err)
     }
-  } catch (err) {
-    log.error('开启插件失败：', err)
   }
 
   if (tasks.length > 0) {
@@ -115,8 +117,10 @@ async function startup ({ mitmproxyPath, setting }) {
 async function shutdown () {
   const tasks = []
 
-  try {
-    for (const key in plugin) {
+  for (const key in plugin) {
+    // 逐个隔离：某个插件的状态读取异常不应中断其余插件的关闭，
+    // 否则会残留 git/npm 代理配置（指向已关闭的代理端口）
+    try {
       if (status.plugin[key] && status.plugin[key].enabled && plugin[key].close) {
         tasks.push((async () => {
           try {
@@ -127,9 +131,9 @@ async function shutdown () {
           }
         })())
       }
+    } catch (error) {
+      log.error(`插件【${key}】关闭失败:`, error)
     }
-  } catch (error) {
-    log.error('插件关闭失败:', error)
   }
 
   if (status.proxy.enabled) {

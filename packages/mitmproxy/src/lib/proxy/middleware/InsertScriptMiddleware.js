@@ -51,6 +51,10 @@ const HEAD_UP = Buffer.from('</HEAD>')
 const BODY = Buffer.from('</body>')
 const BODY_UP = Buffer.from('</BODY>')
 
+// HTTP/2 禁止头，上游服务器可能返回，直传会导致 http2 模块抛异常。
+// 每个响应都要过滤一遍，提升为模块级常量避免每请求重复构建
+const HTTP2_FORBIDDEN = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'http2-settings'])
+
 function chunkByteReplace (_this, chunk, enc, callback, append) {
   if (append) {
     if (append.head) {
@@ -87,8 +91,7 @@ function injectScriptIntoHtml (tags, chunk, script) {
 }
 
 function handleResponseHeaders (res, proxyRes) {
-  // HTTP/2 禁止头，上游服务器可能返回，直传会导致 http2 模块抛异常
-  const HTTP2_FORBIDDEN = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'http2-settings'])
+  // HTTP/2 禁止头见模块级 HTTP2_FORBIDDEN 常量
   Object.keys(proxyRes.headers).forEach((key) => {
     if (proxyRes.headers[key] !== undefined) {
       const newkey = key

@@ -49,6 +49,10 @@ module.exports = class FakeServersCenter {
         return 1
       },
       dispose: (evictServerPromiseObj, evictDnsName) => {
+        // 创建失败的条目（promise rejected 后被移除）没有 serverObj，无需停止服务
+        if (!evictServerPromiseObj.serverObj) {
+          return
+        }
         try {
           evictServerPromiseObj.serverObj.server.close()
           log.info(`旧fake服务缓存被移除，停止服务成功，${evictDnsName}`)
@@ -260,6 +264,14 @@ module.exports = class FakeServersCenter {
 
     serverPromiseObj.promise = promise
     this.addServerPromise(serverPromiseObj)
+
+    // 创建失败（证书生成异常、端口监听失败等）时把失败的 promise 从缓存中移除，
+    // 否则该域名在缓存命中期间会一直拿到同一个 rejected promise，永久连接失败
+    promise.catch(() => {
+      if (this.cache.peek(cacheKey) === serverPromiseObj) {
+        this.cache.delete(cacheKey)
+      }
+    })
 
     return promise
   }

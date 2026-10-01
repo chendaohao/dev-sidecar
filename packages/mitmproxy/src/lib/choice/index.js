@@ -18,7 +18,10 @@ class ChoiceCache {
   }
 
   getOrCreate (key, backupList) {
-    log.info('get counter:', key)
+    // 热路径日志惰性求值：backup 配置的域名每个请求都会走到这里
+    if (log.isLevelEnabled && log.isLevelEnabled('debug')) {
+      log.debug('get counter:', key)
+    }
     let item = this.cache.get(key)
     if (item == null) {
       item = new DynamicChoice(key)

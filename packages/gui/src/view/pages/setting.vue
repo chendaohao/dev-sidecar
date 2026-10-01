@@ -133,8 +133,12 @@ export default {
     async disableBeforeInputEvent () {
       clearTimeout(window.enableBeforeInputEventTimeout)
       window.config.disableBeforeInputEvent = true
+      // 同步推送标志到主进程缓存：before-input-event 对每个按键都会触发，
+      // 主进程靠缓存的标志同步判断，而不是每个键都 executeJavaScript 往返查询
+      this.$api.ipc.send('ds:disable-before-input-event', true)
       window.enableBeforeInputEventTimeout = setTimeout(() => {
         window.config.disableBeforeInputEvent = false
+        this.$api.ipc.send('ds:disable-before-input-event', false)
       }, 2000)
     },
     shortcutChange () {

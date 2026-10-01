@@ -11,6 +11,14 @@ const urlRegexpCache = new LRUCache({
   },
 })
 
+// debug 日志惰性求值：这些日志位于每个请求的匹配热路径上，模板字符串 + JSON.stringify
+// 会在 log4js 过滤掉 debug 之前就执行，必须先判断级别再构造消息
+function debugLog (log, msgFactory) {
+  if (log.isLevelEnabled && log.isLevelEnabled('debug')) {
+    log.debug(msgFactory())
+  }
+}
+
 function isMatched (url, regexp) {
   if (regexp === '.*' || regexp === '*' || regexp === 'true' || regexp === true) {
     return [url]
@@ -88,20 +96,21 @@ function matchHostname (hostMap, hostname, action) {
   }
 
   // 域名快速匹配：直接匹配（优先级最高）
+  // 注：matchHostname 在每个 CONNECT/请求上都会调用多次，命中日志用 debug 级别并惰性求值
   let value = hostMap.origin[hostname]
   if (value != null) {
-    log.info(`matchHostname: ${action}: '${hostname}' -> { "${hostname}": ${JSON.stringify(value)} }`)
+    debugLog(log, () => `matchHostname: ${action}: '${hostname}' -> { "${hostname}": ${JSON.stringify(value)} }`)
     return value // 快速匹配成功
   }
   // 域名快速匹配：三种前缀通配符匹配
   value = hostMap.origin[`*.${hostname}`]
   if (value != null) {
-    log.info(`matchHostname: ${action}: '${hostname}' -> { "*.${hostname}": ${JSON.stringify(value)} }`)
+    debugLog(log, () => `matchHostname: ${action}: '${hostname}' -> { "*.${hostname}": ${JSON.stringify(value)} }`)
     return value // 快速匹配成功
   }
   value = hostMap.origin[`*${hostname}`]
   if (value != null) {
-    log.info(`matchHostname: ${action}: '${hostname}' -> { "*${hostname}": ${JSON.stringify(value)} }`)
+    debugLog(log, () => `matchHostname: ${action}: '${hostname}' -> { "*${hostname}": ${JSON.stringify(value)} }`)
     return value // 快速匹配成功
   }
 
@@ -114,7 +123,7 @@ function matchHostname (hostMap, hostname, action) {
     // 正则表达式匹配
     if (hostname.match(regexp)) {
       value = hostMap[regexp]
-      log.info(`matchHostname: ${action}: '${hostname}' -> { "${regexp}": ${JSON.stringify(value)} }`)
+      debugLog(log, () => `matchHostname: ${action}: '${hostname}' -> { "${regexp}": ${JSON.stringify(value)} }`)
       return value
     }
   }
@@ -159,7 +168,7 @@ function matchHostnameAll (hostMap, hostname, action) {
     const matched = hostname.match(regexp)
     if (matched) {
       value = hostMap[regexp]
-      log.debug(`matchHostname-one: ${action}: '${hostname}' -> { "${regexp}": ${JSON.stringify(value)} }`)
+      debugLog(log, () => `matchHostname-one: ${action}: '${hostname}' -> { "${regexp}": ${JSON.stringify(value)} }`)
       values = merge(values, value)
 
       // 设置matched
@@ -186,25 +195,25 @@ function matchHostnameAll (hostMap, hostname, action) {
   // 优先级：2
   value = hostMap.origin[`*${hostname}`]
   if (value) {
-    log.debug(`matchHostname-one: ${action}: '${hostname}' -> { "*${hostname}": ${JSON.stringify(value)} }`)
+    debugLog(log, () => `matchHostname-one: ${action}: '${hostname}' -> { "*${hostname}": ${JSON.stringify(value)} }`)
     values = merge(values, value)
   }
   // 优先级：3
   value = hostMap.origin[`*.${hostname}`]
   if (value) {
-    log.debug(`matchHostname-one: ${action}: '${hostname}' -> { "*.${hostname}": ${JSON.stringify(value)} }`)
+    debugLog(log, () => `matchHostname-one: ${action}: '${hostname}' -> { "*.${hostname}": ${JSON.stringify(value)} }`)
     values = merge(values, value)
   }
   // 优先级：4，最高（注：优先级高的配置，可以覆盖优先级低的配置，甚至有空配置时，可以移除已有配置）
   value = hostMap.origin[hostname]
   if (value) {
-    log.debug(`matchHostname-one: ${action}: '${hostname}' -> { "${hostname}": ${JSON.stringify(value)} }`)
+    debugLog(log, () => `matchHostname-one: ${action}: '${hostname}' -> { "${hostname}": ${JSON.stringify(value)} }`)
     values = merge(values, value)
   }
 
   if (!lodash.isEmpty(values)) {
     mergeApi.deleteNullItems(values)
-    log.info(`matchHostname-all: ${action}: '${hostname}':`, JSON.stringify(values))
+    debugLog(log, () => `matchHostname-all: ${action}: '${hostname}': ${JSON.stringify(values)}`)
     return values
   } else {
     log.debug(`matchHostname-all: ${action}: '${hostname}' Not-Matched`)

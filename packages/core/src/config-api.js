@@ -10,6 +10,10 @@ const configLoader = require('./config/local-config-loader')
 
 let configTarget = lodash.cloneDeep(defConfig)
 
+// 远程配置下载超时（毫秒）：request 库默认无超时，网络黑洞（如 TCP 半开连接）会让
+// 启动流程中的 await download() 永久挂起，拖死整个应用启动
+const REMOTE_CONFIG_DOWNLOAD_TIMEOUT = 10000
+
 function get () {
   return configTarget
 }
@@ -64,7 +68,7 @@ const configApi = {
       // 当用户开启 proxy.setEnv 后，环境变量会指向 dev-sidecar 自己的代理端口，
       // 启动时本地代理尚未监听，走代理会导致下载失败（ECONNREFUSED 127.0.0.1:31181），
       // 新装用户会因此无法下载远程配置，只能使用内置规则。
-      request(remoteConfigUrl, { headers, proxy: null }, (error, response, body) => {
+      request(remoteConfigUrl, { headers, proxy: null, timeout: REMOTE_CONFIG_DOWNLOAD_TIMEOUT }, (error, response, body) => {
         if (error) {
           log.error(`下载远程配置失败: ${remoteConfigUrl}, error:`, error, ', response:', response, ', body:', body)
           reject(error)

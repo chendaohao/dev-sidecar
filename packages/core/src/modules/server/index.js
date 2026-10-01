@@ -126,20 +126,24 @@ const serverApi = {
         serverProcess.send({ type: 'action', event: { key: 'close' } })
       },
     }
-    serverProcess.on('beforeExit', (code) => {
-      log.warn('server process beforeExit, code:', code)
-    })
-    serverProcess.on('SIGPIPE', (code, signal) => {
-      log.warn(`server process SIGPIPE, code: ${code}, signal:`, signal)
+    // ChildProcess 只会触发 exit/close/error/message/disconnect/spawn 事件，
+    // beforeExit/SIGPIPE/uncaughtException 是 process 自身的事件，挂在子进程句柄上永远不会触发
+    serverProcess.on('error', (err) => {
+      // fork 异步失败（路径不存在、EPERM 等）时触发，若无监听器会成为未捕获异常，
+      // 且状态永远停留在“启动中”
+      log.error('server process error:', err)
+      fireStatus(false)
+      event.fire('error', { key: 'server', error: err, message: err.message })
     })
     serverProcess.on('exit', (code, signal) => {
       log.warn(`server process exit, code: ${code}, signal:`, signal)
-    })
-    serverProcess.on('uncaughtException', (err, origin) => {
-      log.error('server process uncaughtException:', err)
+      fireStatus(false)
     })
     serverProcess.on('message', (msg) => {
-      log.debug('收到子进程消息:', JSON.stringify(msg))
+      if (log.isDebugEnabled()) {
+        // traffic/speed 消息每秒多条，JSON.stringify 不能在 debug 关闭时空转
+        log.debug('收到子进程消息:', JSON.stringify(msg))
+      }
       if (msg.type === 'status') {
         fireStatus(msg.event)
       } else if (msg.type === 'error') {

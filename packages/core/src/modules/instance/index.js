@@ -66,6 +66,22 @@ function readInstance () {
   }
 }
 
+// 原子写入：先写临时文件再 rename，避免进程在写入中途崩溃时 running.json 处于半写状态
+// （running.json 损坏会导致下次启动时 instance/状态信息丢失、server 启动读取失败）
+function writeFileAtomic (filePath, content) {
+  const tmpPath = `${filePath}.${process.pid}.tmp`
+  fs.writeFileSync(tmpPath, content)
+  try {
+    fs.renameSync(tmpPath, filePath)
+  } catch {
+    // rename 失败（如目标文件正被其他进程占用）时回退为直接写入，保证更新不丢失
+    fs.writeFileSync(filePath, content)
+    try {
+      fs.unlinkSync(tmpPath)
+    } catch {}
+  }
+}
+
 function writeInstance (instance) {
   const filePath = getRunningJsonPath()
   let data = {}
@@ -78,7 +94,7 @@ function writeInstance (instance) {
     data.app = {}
   }
   data.app.instance = instance
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2))
+  writeFileAtomic(filePath, JSON.stringify(data, null, 2))
 }
 
 let statusWriteTimer = null
@@ -114,13 +130,21 @@ function updateStatus (key, value) {
       for (const key in queue) {
         lodash.set(data.app.status, key, queue[key])
       }
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2))
+      writeFileAtomic(filePath, JSON.stringify(data, null, 2))
     } catch {}
   }, 300)
 }
 
+// acquireLock 可能被多次调用（重启流程），状态订阅只能注册一次，否则监听器按次数累积、
+// 同一状态更新被重复写入
+let statusWatcherRegistered = false
+
 // 订阅 core 状态总线，仅同步 *.enabled 开关状态（过滤 free_eye.result 等大 payload）
 function watchStatusEvents ({ log } = {}) {
+  if (statusWatcherRegistered) {
+    return
+  }
+  statusWatcherRegistered = true
   event.register('status', (e) => {
     if (!e || typeof e.key !== 'string' || !e.key.endsWith('.enabled')) {
       return

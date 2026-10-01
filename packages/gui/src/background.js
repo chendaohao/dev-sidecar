@@ -74,6 +74,15 @@ let winIsHidden = false
 let tray // 防止被内存清理
 let forceClose = false
 
+// 渲染进程快捷键录制窗口的标志缓存：录制期间渲染进程通过 ipc 推送 true/false，
+// before-input-event 每个按键都触发，必须同步读取此缓存而非往返 executeJavaScript
+let rendererDisableBeforeInputEvent = false
+
+// 全局只注册一次（createWindow 可能因 macOS activate 重建窗口被再次调用）
+ipcMain.on('ds:disable-before-input-event', (_event, value) => {
+  rendererDisableBeforeInputEvent = value === true
+})
+
 try {
   DevSidecar.api.config.reload()
 } catch (e) {
@@ -394,18 +403,24 @@ function createWindow (startHideWindow, autoQuitIfError = true) {
     }
   }
 
-  // 监听键盘事件
+  // 监听键盘事件。
+  // 优化：disableBeforeInputEvent 标志（录制快捷键时渲染进程临时禁用全局按键处理）
+  // 由渲染进程通过 ipc 'ds:disable-before-input-event' 推送到主进程缓存，
+  // 这里同步读取即可；不再对每个按键 executeJavaScript 往返查询（那会给每次按键
+  // 增加一次渲染进程往返延迟，并在日志中刷屏）
   win.webContents.on('before-input-event', (event, input) => {
-    win.webContents.executeJavaScript('config')
+    if (!rendererDisableBeforeInputEvent) {
+      shortcut(event, input)
+    }
+  })
+
+  // 页面加载完成后同步一次初始标志（页面刷新后渲染进程的 window.config 会被重置为 false）
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.executeJavaScript('window.config ? window.config.disableBeforeInputEvent === true : false')
       .then((value) => {
-        console.info('window.config:', value, ', key:', input.key)
-        if (!value || (value.disableBeforeInputEvent !== true && value.disableBeforeInputEvent !== 'true')) {
-          shortcut(event, input)
-        }
+        rendererDisableBeforeInputEvent = value === true
       })
-      .catch(() => {
-        shortcut(event, input)
-      })
+      .catch(() => {})
   })
 
   // 监听渲染进程发送过来的消息

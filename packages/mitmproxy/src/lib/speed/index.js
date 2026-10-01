@@ -7,6 +7,19 @@ const SpeedTester = require('./SpeedTester.js')
 const SpeedTestPool = {
 }
 
+// 与 SpeedTester 的 DISABLE_TIMEOUT 保持一致：闲置超过该时长后测速 interval 已自停，
+// 池中对象一并清除，避免长期运行时按访问过的域名无限累积测速器
+const SPEED_TESTER_IDLE_EVICT = 60 * 60 * 1000
+
+function sweepIdleSpeedTests () {
+  const now = Date.now()
+  for (const key in SpeedTestPool) {
+    if (now - SpeedTestPool[key].lastReadTime > SPEED_TESTER_IDLE_EVICT) {
+      delete SpeedTestPool[key]
+    }
+  }
+}
+
 function addSpeedTest (hostname, port) {
   if (!port) {
     const idx = hostname.indexOf(':')
@@ -23,6 +36,8 @@ function addSpeedTest (hostname, port) {
   const key = port === 443 ? hostname : `${hostname}:${port}`
 
   if (SpeedTestPool[key] == null) {
+    // 新建前顺手清理闲置条目，防止代理长期运行时测速器无界增长
+    sweepIdleSpeedTests()
     return SpeedTestPool[key] = new SpeedTester({ hostname, port })
   }
 

@@ -40,10 +40,19 @@ module.exports = class CertAndKeyContainer {
     log.info(`【CreateFakeCertificate】dnsName: ${dnsName}, hostname: ${hostname}:${port}`)
     const promise = tlsUtils.createFakeCertificateByDomain(this.caKey, this.caCert, dnsName, mappingHostNames)
 
-    this.addCertPromise({
+    const certPromiseObj = {
       dnsName,
       mappingHostNames,
       promise,
+    }
+    this.addCertPromise(certPromiseObj)
+
+    // 证书生成失败时把失败的 promise 从缓存中移除，下次连接会重新生成，
+    // 否则该域名在缓存命中期间会一直拿到同一个 rejected promise，永久连接失败
+    promise.catch(() => {
+      if (this.cache.peek(dnsName) === certPromiseObj) {
+        this.cache.delete(dnsName)
+      }
     })
 
     return promise

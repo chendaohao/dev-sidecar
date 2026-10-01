@@ -16,6 +16,10 @@ const MAX_SLOW_TIME = 8000 // 超过此时间 则认为太慢了
 const MAX_RETRY_BODY_SIZE = 1024 * 1024 // 自动重试时最多缓存 1MB 请求体，超过则跳过重试
 const WWW_AUTH_HEADER_RE = /^www-authenticate$/i
 
+// HTTP/2 禁止头，上游服务器可能返回，直传会导致 http2 模块抛异常。
+// 每个响应都要过滤一遍，提升为模块级常量避免每请求重复构建
+const HTTP2_FORBIDDEN = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'http2-settings'])
+
 // 可能携带请求体的方法；缺少 Content-Length 时无法有界缓存，禁止重试
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -548,8 +552,7 @@ module.exports = function createRequestHandler (createIntercepts, middlewares, e
       await responseInterceptorPromise
 
       if (!res.headersSent) { // prevent duplicate set headers
-        // HTTP/2 禁止头，上游服务器可能返回，直传会导致 http2 模块抛异常
-        const HTTP2_FORBIDDEN = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'http2-settings'])
+        // HTTP/2 禁止头见模块级 HTTP2_FORBIDDEN 常量
         Object.keys(proxyRes.headers).forEach((key) => {
           if (proxyRes.headers[key] !== undefined) {
             // https://github.com/nodejitsu/node-http-proxy/issues/362
